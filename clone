@@ -1,0 +1,52 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]
+then
+	echo "Usage: ./clone [github username] [repo]"
+	exit 1
+fi
+
+user=$1
+repo=$2
+
+if [[ -d $user ]]
+then
+	for dir in $user/*
+	do
+		if [[ $dir == $user/$repo ]]
+		then
+			echo "You have already cloned that repo."
+			exit 1
+		fi
+	done
+else
+	mkdir "$user"
+fi
+
+cd $user
+echo "Cloning $repo..."
+if ! git clone git@github.com:$user/$repo > /dev/null 2>&1
+then
+	echo "ERROR: Repo does not exist."
+	exit 1
+fi
+
+echo "Fixing up $repo..."
+
+cd $repo
+
+git checkout `git rev-parse HEAD` > /dev/null 2>&1
+
+if ! git fetch origin +refs/heads/*:refs/heads/* > /dev/null 2>&1
+then
+	echo "Warning: Unable to fetch from origin."
+fi
+
+if ! git checkout master > /dev/null 2>&1
+then
+	if ! git checkout main > /dev/null 2>&1
+	then
+		echo "ERROR: Unable to checkout to main nor master on $repo."
+		exit 1
+	fi
+fi

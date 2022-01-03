@@ -1,0 +1,50 @@
+#!/bin/bash
+
+if [[ $# -lt 1 ]]
+then
+	echo "Usage: ./check [github username]"
+	exit 1
+fi
+
+user=$1
+repos=$(gh repo list --json name $user | grep -o -E ":\"([a-zA-Z0-9\.-])+\"" | cut -c3- | sed 's/.$//') # Do weird linux magic to parse JSON
+repocount=$(gh repo list $user | wc -l)
+count=$(./count $user -c)
+
+if [[ $? -ne 0 ]]
+then
+	echo $count
+	exit 1
+fi
+
+if [[ $repocount -ne $count ]]
+then
+	echo "$user/ only has $count repositories out of $repocount synced."
+	echo "Here are the missing repositories to be synced:"
+
+	missingRepos=()
+
+	for repo in $repos
+	do
+		if ! [[ -d $user/$repo ]]
+		then
+			echo -e "*\t$repo"
+			missingRepos+=( $repo )
+		fi
+	done
+
+	echo ""
+	echo "Cloning them all..."
+	for repo in ${missingRepos[@]}
+	do
+		./clone $user $repo
+	done
+
+else
+	echo "Everything is fully synced!"
+fi
+
+echo ""
+echo "Updating everything..."
+./pull $user
+
