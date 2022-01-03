@@ -33,7 +33,7 @@ $ tree -L 2
   └── pull
 ```
 
-Each folder you see is a fully-cloned github repository with every branch and tag cloned (recursive branches haven't been tested). It **does not** do a `git clone --mirror`, as repos are simply cloned normally with their branches loaded in using `git checkout`. 
+Each folder you see is a fully-cloned github repository with every branch and tag cloned (recursive branches haven't been tested). Each repo is contained inside a folder labeled on their owner or organization, i.e. "Desperationis" and "jghsrobotics" in this case. It **does not** do a `git clone --mirror`, as repos are simply cloned normally with their branches loaded in using `git checkout`. 
 
 ## Usage
 There are 4 executable bash scripts you can use:
