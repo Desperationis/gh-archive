@@ -43,4 +43,4 @@ There are 4 executable bash scripts you can use:
 * `./pull [username]` - Does a `git pull --all` on every single locally saved repository from a specific user. If the repo is taken down / unavailable the repo is moved to the root directory in `Outdated`. 
 * `./check [github username]` - The most useful script here; First uses `./clone` and `gh` to clone every single repository that hasn't been saved locally then calls `./pull` to update any existing repos. This should be used almost immediately as `./clone` can only clone repos one at a time. 
 
-Due to how it works, you **must** call `clone` first on any single project you have then you are free to use anything else (notably `./check`). Optionally, you can simply create a directory in the root directory labeled with your username (see tree output above) then use anything you want. 
+Due to how it works, you **must** call `./clone` first on any single project you have then you are free to use anything else (notably `./check`). Optionally, you can simply create a directory in the root directory labeled with your username (see tree output above) then use anything you want. 
