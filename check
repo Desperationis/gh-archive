@@ -7,7 +7,7 @@ then
 fi
 
 user=$1
-repos=$(gh repo list --json name $user | grep -o -E ":\"([a-zA-Z0-9\.-_])+\"" | cut -c3- | sed 's/.$//') # Do weird linux magic to parse JSON
+repos=$(gh repo list --json name $user | grep -o -E ":\"([a-zA-Z0-9\._-])+\"" | cut -c3- | sed 's/.$//') # Do weird linux magic to parse JSON
 repocount=$(gh repo list $user | wc -l)
 count=$(./count $user -c)
 
