@@ -28,14 +28,19 @@ do
 			echo "$(echo "$dir" | cut -c3-) has been updated."
 			cd ..
 		else
-			echo "$(echo "$dir" | cut -c3-) is not on github anymore. Moving to Outdated/"
-			cd ../../
-			if ! [[ -d Outdated ]]
+			echo "$(echo "$dir" | cut -c3-) took too long to respond. Should it be moved to Outdated/?"
+			read answer
+
+			if [[ $answer =~ ^[Yy]$ ]]
 			then
-				mkdir Outdated
-			fi	
-			mv $user/$dir Outdated/
-			cd $user
+				cd ../../
+				if ! [[ -d Outdated ]]
+				then
+					mkdir Outdated
+				fi	
+				mv $user/$dir Outdated/
+				cd $user
+			fi
 		fi
 	fi
 done
