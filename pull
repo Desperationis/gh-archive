@@ -1,46 +1,87 @@
 #!/bin/bash
 
-if [[ $# -lt 1 ]]
-then
-	echo "Usage: ./pull [username]"
+# pull - Update all local repositories for a user/org with all branches and tags
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# -lt 1 ]]; then
+	echo "Usage: ./pull [username/org]"
 	exit 1
 fi
 
-user=$1
+user="$1"
+user_dir="$SCRIPT_DIR/accounts/$user"
 
-if ! [[ -d $user ]]
-then
+if ! [[ -d "$user_dir" ]]; then
 	echo "ERROR: $user/ does not exist."
+	echo "       Run ./check $user first to create it."
 	exit 1
 fi
 
+# Find all git repos in the user directory
+updated=0
+failed=0
+failed_repos=()
 
-cd $user
-dirs=$(find . -maxdepth 1 -type d)
+for repo_dir in "$user_dir"/*/; do
+	# Skip if not a directory
+	[[ -d "$repo_dir" ]] || continue
 
-for dir in $dirs
-do
-	if [[ "$dir" != "." ]]
-	then
-		cd $dir
-		if git pull --all > /dev/null 2>&1
-		then
-			echo "$(echo "$dir" | cut -c3-) has been updated."
-			cd ..
-		else
-			echo "$(echo "$dir" | cut -c3-) took too long to respond. Should it be moved to Outdated/?"
-			read answer
+	# Skip if not a git repo
+	[[ -d "$repo_dir/.git" ]] || continue
 
-			if [[ $answer =~ ^[Yy]$ ]]
-			then
-				cd ../../
-				if ! [[ -d Outdated ]]
-				then
-					mkdir Outdated
-				fi	
-				mv $user/$dir Outdated/
-				cd $user
-			fi
+	repo_name=$(basename "$repo_dir")
+
+	# Use a subshell to avoid cd pollution
+	(
+		cd "$repo_dir"
+
+		# Detach HEAD so we can update all branches including the current one
+		git checkout --detach HEAD 2>/dev/null || true
+
+		# Fetch all branches and tags (this gets NEW branches too)
+		if ! git fetch origin '+refs/heads/*:refs/heads/*' --tags --force 2>&1; then
+			exit 1
 		fi
+
+		# Also fetch PR refs for complete archival
+		git fetch origin '+refs/pull/*/head:refs/pull/*/head' 2>/dev/null || true
+
+		# Pull current branch if it has an upstream
+		git pull --ff-only 2>/dev/null || true
+	)
+
+	if [[ $? -eq 0 ]]; then
+		branch_count=$(cd "$repo_dir" && git branch | wc -l)
+		tag_count=$(cd "$repo_dir" && git tag | wc -l)
+		echo "Updated: $repo_name ($branch_count branches, $tag_count tags)"
+		((updated++))
+	else
+		echo "FAILED:  $repo_name"
+		((failed++))
+		failed_repos+=("$repo_name")
 	fi
 done
+
+echo ""
+echo "Summary: $updated updated, $failed failed"
+
+# Handle failed repos
+if [[ $failed -gt 0 ]]; then
+	echo ""
+	echo "The following repos failed to update (may be deleted/private/unavailable):"
+	for repo in "${failed_repos[@]}"; do
+		echo "  - $repo"
+	done
+
+	echo ""
+	read -p "Move failed repos to Archived/$user/? [y/N] " answer
+
+	if [[ "$answer" =~ ^[Yy]$ ]]; then
+		mkdir -p "$SCRIPT_DIR/accounts/Archived/$user"
+		for repo in "${failed_repos[@]}"; do
+			mv "$user_dir/$repo" "$SCRIPT_DIR/accounts/Archived/$user/"
+			echo "Moved: $repo -> Archived/$user/"
+		done
+	fi
+fi

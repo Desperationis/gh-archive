@@ -1,0 +1,343 @@
+#!/bin/bash
+
+# sync - Archive EVERYTHING: your repos + all organizations you belong to
+# This is the main "one command to archive everything" script
+# Supports parallel processing with configurable worker count
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default number of workers
+DEFAULT_WORKERS=4
+
+# Parse command line arguments
+MAX_WORKERS="${MAX_WORKERS:-$DEFAULT_WORKERS}"
+
+show_usage() {
+	echo "Usage: ./sync [-j N|--jobs N]"
+	echo ""
+	echo "Options:"
+	echo "  -j N, --jobs N    Number of parallel workers (default: $DEFAULT_WORKERS)"
+	echo "                    Can also be set via MAX_WORKERS environment variable"
+	echo ""
+	echo "Examples:"
+	echo "  ./sync            # Use default ($DEFAULT_WORKERS workers)"
+	echo "  ./sync -j 8       # Use 8 parallel workers"
+	echo "  MAX_WORKERS=2 ./sync  # Use 2 workers via env var"
+}
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-j|--jobs)
+			if [[ -z "$2" || ! "$2" =~ ^[0-9]+$ ]]; then
+				echo "ERROR: -j requires a positive number"
+				exit 1
+			fi
+			MAX_WORKERS="$2"
+			shift 2
+			;;
+		-h|--help)
+			show_usage
+			exit 0
+			;;
+		*)
+			echo "ERROR: Unknown option: $1"
+			show_usage
+			exit 1
+			;;
+	esac
+done
+
+# Ensure at least 1 worker
+if [[ "$MAX_WORKERS" -lt 1 ]]; then
+	MAX_WORKERS=1
+fi
+
+echo "========================================"
+echo "  gh-archive - Full GitHub Backup"
+echo "========================================"
+echo "  Workers: $MAX_WORKERS"
+echo ""
+
+# Check if gh is installed and authenticated
+if ! command -v gh &> /dev/null; then
+	echo "ERROR: GitHub CLI (gh) is not installed."
+	echo "       Install it from: https://cli.github.com/"
+	exit 1
+fi
+
+if ! gh auth status &> /dev/null; then
+	echo "ERROR: Not logged into GitHub CLI."
+	echo "       Run: gh auth login"
+	exit 1
+fi
+
+# Get the authenticated user
+current_user=$(gh api user --jq '.login')
+
+if [[ -z "$current_user" ]]; then
+	echo "ERROR: Could not determine logged-in user."
+	exit 1
+fi
+
+echo "Logged in as: $current_user"
+echo ""
+
+# Get all organizations the user is a member of
+echo "Finding organizations..."
+if command -v jq &> /dev/null; then
+	orgs=$(gh api user/orgs --paginate --jq '.[].login' 2>/dev/null || echo "")
+else
+	orgs=$(gh api user/orgs --paginate 2>/dev/null | grep -oP '"login"\s*:\s*"\K[^"]+' || echo "")
+fi
+
+org_count=$(echo "$orgs" | grep -c . || echo "0")
+echo "Found $org_count organizations"
+echo ""
+
+# Build list of all accounts to sync
+accounts=("$current_user")
+while IFS= read -r org; do
+	[[ -n "$org" ]] && accounts+=("$org")
+done <<< "$orgs"
+
+echo "Will archive repositories for:"
+for account in "${accounts[@]}"; do
+	echo "  - $account"
+done
+echo ""
+
+# Gather all repositories from all accounts
+echo "Gathering repository list from all accounts..."
+all_repos=()
+
+for account in "${accounts[@]}"; do
+	# Create directory if it doesn't exist
+	mkdir -p "$SCRIPT_DIR/accounts/$account"
+
+	# Get repos for this account
+	if command -v jq &> /dev/null; then
+		repos=$(gh repo list "$account" -L 999 --json name -q '.[].name' 2>/dev/null || echo "")
+	else
+		repos=$(gh repo list "$account" -L 999 --json name 2>/dev/null | grep -oP '"name"\s*:\s*"\K[^"]+' || echo "")
+	fi
+
+	while IFS= read -r repo; do
+		[[ -n "$repo" ]] && all_repos+=("$account/$repo")
+	done <<< "$repos"
+done
+
+total_repos=${#all_repos[@]}
+echo "Found $total_repos total repositories across all accounts"
+echo ""
+
+if [[ $total_repos -eq 0 ]]; then
+	echo "No repositories found. Nothing to sync."
+	exit 0
+fi
+
+# Create a temporary directory for job status tracking
+job_dir=$(mktemp -d)
+trap 'wait; rm -rf "$job_dir"' EXIT
+
+# Initialize counter files (append-only for thread safety)
+touch "$job_dir/success"
+touch "$job_dir/failure"
+
+# Function to sync a single repository (clone if missing, then pull)
+sync_repo() {
+	local account_repo="$1"
+	local account="${account_repo%%/*}"
+	local repo="${account_repo#*/}"
+	local repo_dir="$SCRIPT_DIR/accounts/$account/$repo"
+	local status="ok"
+
+	# Clone if missing
+	if [[ ! -d "$repo_dir" ]]; then
+		if ! git clone "git@github.com:$account/$repo.git" "$repo_dir" 2>/dev/null; then
+			echo "FAILED (clone): $account/$repo"
+			return 1
+		fi
+	fi
+
+	# Update the repo
+	(
+		cd "$repo_dir"
+
+		# Detach HEAD so we can update all branches
+		git checkout --detach HEAD 2>/dev/null || true
+
+		# Fetch all branches and tags
+		if ! git fetch origin '+refs/heads/*:refs/heads/*' --tags --force 2>/dev/null; then
+			exit 1
+		fi
+
+		# Fetch PR refs
+		git fetch origin '+refs/pull/*/head:refs/pull/*/head' 2>/dev/null || true
+
+		# Pull current branch if possible
+		git pull --ff-only 2>/dev/null || true
+	)
+
+	if [[ $? -eq 0 ]]; then
+		local branch_count=$(cd "$repo_dir" && git branch 2>/dev/null | wc -l)
+		local tag_count=$(cd "$repo_dir" && git tag 2>/dev/null | wc -l)
+		echo "OK: $account/$repo ($branch_count branches, $tag_count tags)"
+		return 0
+	else
+		echo "FAILED (update): $account/$repo"
+		return 1
+	fi
+}
+
+export -f sync_repo
+export SCRIPT_DIR
+
+# Run jobs in parallel with worker limit
+echo "========================================"
+echo "  Processing $total_repos repositories"
+echo "  Using $MAX_WORKERS parallel workers"
+echo "========================================"
+echo ""
+
+# Track job PIDs
+declare -a job_pids=()
+
+# Function to wait for a job slot
+wait_for_slot() {
+	while [[ ${#job_pids[@]} -ge $MAX_WORKERS ]]; do
+		# Check which jobs are still running
+		local new_pids=()
+		for pid in "${job_pids[@]}"; do
+			if kill -0 "$pid" 2>/dev/null; then
+				new_pids+=("$pid")
+			fi
+		done
+		job_pids=("${new_pids[@]}")
+
+		# If still at max, sleep briefly
+		if [[ ${#job_pids[@]} -ge $MAX_WORKERS ]]; then
+			sleep 0.1
+		fi
+	done
+}
+
+processed=0
+for repo_path in "${all_repos[@]}"; do
+	# Wait for a slot if we're at max workers
+	wait_for_slot
+
+	# Start new job in background
+	(
+		if sync_repo "$repo_path"; then
+			echo "1" >> "$job_dir/success"
+		else
+			echo "1" >> "$job_dir/failure"
+		fi
+	) &
+
+	job_pids+=($!)
+	((++processed))
+
+	# Show progress every 10 repos
+	if [[ $((processed % 10)) -eq 0 ]]; then
+		echo "[Progress: $processed/$total_repos queued]"
+	fi
+done
+
+# Wait for all remaining jobs to complete
+echo ""
+echo "Waiting for remaining jobs to complete..."
+wait
+
+# Count results
+completed=$(wc -l < "$job_dir/success" 2>/dev/null || echo "0")
+failed=$(wc -l < "$job_dir/failure" 2>/dev/null || echo "0")
+
+echo ""
+echo "========================================"
+echo "  Backup Complete!"
+echo "========================================"
+echo ""
+echo "Results: $completed succeeded, $failed failed"
+echo ""
+
+# Check for local repos that no longer exist on GitHub (orphaned repos)
+echo "Checking for orphaned local repositories..."
+orphaned_repos=()
+
+for account in "${accounts[@]}"; do
+	account_dir="$SCRIPT_DIR/accounts/$account"
+	[[ -d "$account_dir" ]] || continue
+
+	# Get list of GitHub repos for this account (already fetched above)
+	github_repos=()
+	for repo_path in "${all_repos[@]}"; do
+		if [[ "${repo_path%%/*}" == "$account" ]]; then
+			github_repos+=("${repo_path#*/}")
+		fi
+	done
+
+	# Check each local directory
+	for repo_dir in "$account_dir"/*/; do
+		[[ -d "$repo_dir" ]] || continue
+		[[ -d "$repo_dir/.git" ]] || continue
+
+		repo_name=$(basename "$repo_dir")
+
+		# Check if this repo exists on GitHub
+		found=false
+		for gh_repo in "${github_repos[@]}"; do
+			if [[ "$gh_repo" == "$repo_name" ]]; then
+				found=true
+				break
+			fi
+		done
+
+		if [[ "$found" == "false" ]]; then
+			orphaned_repos+=("$account/$repo_name")
+		fi
+	done
+done
+
+if [[ ${#orphaned_repos[@]} -gt 0 ]]; then
+	echo ""
+	echo "Found ${#orphaned_repos[@]} orphaned repos (exist locally but not on GitHub):"
+	for orphan in "${orphaned_repos[@]}"; do
+		echo "  - $orphan"
+	done
+
+	echo ""
+	echo "Moving orphaned repos to Archived/..."
+	for orphan in "${orphaned_repos[@]}"; do
+		account="${orphan%%/*}"
+		repo="${orphan#*/}"
+		archive_dir="$SCRIPT_DIR/accounts/Archived/$account"
+		mkdir -p "$archive_dir"
+		mv "$SCRIPT_DIR/accounts/$account/$repo" "$archive_dir/"
+		echo "  Archived: $orphan"
+	done
+else
+	echo "No orphaned repositories found."
+fi
+
+echo ""
+
+# Summary
+echo "Archived accounts:"
+for account in "${accounts[@]}"; do
+	if [[ -d "$SCRIPT_DIR/accounts/$account" ]]; then
+		count=$("$SCRIPT_DIR/count" "$account" -c 2>/dev/null || echo "0")
+		echo "  - $account: $count repos"
+	fi
+done
+
+# Show archived count if any
+if [[ -d "$SCRIPT_DIR/accounts/Archived" ]]; then
+	archived_count=$(find "$SCRIPT_DIR/accounts/Archived" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l)
+	if [[ $archived_count -gt 0 ]]; then
+		echo ""
+		echo "Archived repositories: $archived_count"
+	fi
+fi

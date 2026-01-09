@@ -1,33 +1,32 @@
 #!/bin/bash
 
-if [[ $# -lt 1 ]]
-then
-	echo "Usage: ./count [username] (-c optional)"
+# count - Count locally saved repositories for a user/org
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# -lt 1 ]]; then
+	echo "Usage: ./count [username/org] (-c optional)"
 	exit 1
 fi
 
-user=$1
+user="$1"
+user_dir="$SCRIPT_DIR/accounts/$user"
 
-if ! [[ -d $user ]]
-then
+if ! [[ -d "$user_dir" ]]; then
 	echo "ERROR: $user/ does not exist."
 	exit 1
 fi
 
-
-dirs=$(find $user/ -maxdepth 1 -type d)
-
-for dir in $dirs
-do
-	if [[ "$dir" != "$user/" ]]
-	then
-		buffer="${buffer}$dir\n"
-	fi
+# Count directories that are git repos
+count=0
+for dir in "$user_dir"/*/; do
+	[[ -d "$dir" ]] || continue
+	[[ -d "$dir/.git" ]] || continue
+	((count++))
 done
 
-if [[ $2 == "-c" ]]
-then
-	echo "$(echo -e -n "$buffer" | wc -l)"
+if [[ "$2" == "-c" ]]; then
+	echo "$count"
 else
-	echo "There are $(echo -e -n "$buffer" | wc -l) active repositories here."
+	echo "There are $count repositories archived for $user."
 fi
