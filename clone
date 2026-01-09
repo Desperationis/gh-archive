@@ -1,52 +1,65 @@
 #!/bin/bash
 
-if [[ $# -lt 2 ]]
-then
-	echo "Usage: ./clone [github username] [repo]"
+# clone - Clone a single GitHub repository with ALL branches, tags, and full history
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# -lt 2 ]]; then
+	echo "Usage: ./clone [github username/org] [repo]"
 	exit 1
 fi
 
-user=$1
-repo=$2
+user="$1"
+repo="$2"
 
-if [[ -d $user ]]
-then
-	for dir in $user/*
-	do
-		if [[ $dir == $user/$repo ]]
-		then
-			echo "You have already cloned that repo."
-			exit 1
-		fi
-	done
-else
-	mkdir "$user"
+# Create user directory if it doesn't exist
+if [[ -d "$SCRIPT_DIR/$user/$repo" ]]; then
+	echo "Already cloned: $user/$repo"
+	exit 0
 fi
 
-cd $user
-echo "Cloning $repo..."
-if ! git clone git@github.com:$user/$repo > /dev/null 2>&1
-then
-	echo "ERROR: Repo does not exist."
+mkdir -p "$SCRIPT_DIR/$user"
+
+echo "Cloning $user/$repo..."
+
+# Clone with full history (default behavior, but explicit)
+if ! git clone "git@github.com:$user/$repo.git" "$SCRIPT_DIR/$user/$repo" 2>&1; then
+	echo "ERROR: Failed to clone $user/$repo"
+	echo "       (Does the repo exist? Do you have SSH access?)"
+	rm -rf "$SCRIPT_DIR/$user/$repo" 2>/dev/null || true
 	exit 1
 fi
 
-echo "Fixing up $repo..."
+cd "$SCRIPT_DIR/$user/$repo"
 
-cd $repo
+echo "Fetching all branches and tags for $repo..."
 
-git checkout `git rev-parse HEAD` > /dev/null 2>&1
-
-if ! git fetch origin +refs/heads/*:refs/heads/* > /dev/null 2>&1
-then
-	echo "Warning: Unable to fetch from origin."
+# Fetch ALL branches from origin and create local tracking branches
+if ! git fetch origin '+refs/heads/*:refs/heads/*' --tags --force 2>&1; then
+	echo "Warning: Could not fetch all branches from origin"
 fi
 
-if ! git checkout master > /dev/null 2>&1
-then
-	if ! git checkout main > /dev/null 2>&1
-	then
-		echo "ERROR: Unable to checkout to main nor master on $repo."
-		exit 1
-	fi
+# Also fetch all tags explicitly (some may be annotated)
+git fetch --tags --force 2>/dev/null || true
+
+# Fetch any pull request refs (useful for archival)
+git fetch origin '+refs/pull/*/head:refs/pull/*/head' 2>/dev/null || true
+
+# Try to checkout the default branch (main or master)
+default_branch=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d: -f2 | tr -d ' ' || echo "")
+
+if [[ -n "$default_branch" ]] && git rev-parse --verify "$default_branch" &>/dev/null; then
+	git checkout "$default_branch" 2>/dev/null || true
+elif git rev-parse --verify main &>/dev/null; then
+	git checkout main 2>/dev/null || true
+elif git rev-parse --verify master &>/dev/null; then
+	git checkout master 2>/dev/null || true
 fi
+
+# Count what we got
+branch_count=$(git branch | wc -l)
+tag_count=$(git tag | wc -l)
+
+echo "Done: $repo ($branch_count branches, $tag_count tags)"

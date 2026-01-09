@@ -1,46 +1,191 @@
 # gh-archive
-Set of bash scripts for creating offline, local backups of your Github account.
+
+Offline backup of your entire GitHub presence - all your repos, all your organizations, all branches, full history.
+
+## Quick Start
+
+```bash
+# 1. Make sure you're logged into GitHub CLI
+gh auth login
+
+# 2. Run the backup
+./sync
+```
+
+That's it. The `sync` command will:
+- Find your GitHub username automatically
+- Find all organizations you belong to
+- Clone every repository you have access to
+- Fetch ALL branches, ALL tags, and full git history
+- Update existing repos with any new changes
 
 ## Requirements
-Bash 5.0+ or more has been shown to work (earlier may work), git, and [Github's CLI tool](https://github.com/cli/cli) is needed. `gh` should be logged in with your account(s) when using it.
 
-## Result
-These scripts was specifically made in the worse-case scenario of Github permanently shutting down with little to no notice. When fully synced, expect output like this:
-```
-$ tree -L 2
-  ├── check
-  ├── clone
-  ├── count
-  ├── Desperationis
-  │   ├── 2DStarve
-  │   ├── psscraper
-  │   ├── PythonFileLibrary
-  │   ├── Snake
-  │   └── VM-The-Art-of-Exploitation-2nd-Edition
-  ├── jghsrobotics
-  │   ├── BatteryTester
-  │   ├── gst-oculus-fpv
-  │   ├── gst-raspberry
-  │   ├── VEXR-D
-  │   └── VEXSerialRemote
-  ├── Outdated
-  │   ├── 2D-Shadows
-  │   ├── CS202
-  │   ├── EnergyProposal
-  │   ├── Folder-Softwares
-  │   ├── Quadtree
-  │   └── TOCYEN
-  └── pull
+- **Bash 5.0+**
+- **Git**
+- **[GitHub CLI](https://cli.github.com/)** (`gh`) - must be authenticated
+- **SSH key** added to your GitHub account (repos are cloned via SSH)
+
+### Setup
+
+```bash
+# Install GitHub CLI (macOS)
+brew install gh
+
+# Install GitHub CLI (Ubuntu/Debian)
+sudo apt install gh
+
+# Login to GitHub
+gh auth login
+
+# Make sure your SSH key is set up
+ssh -T git@github.com
 ```
 
-Each folder you see is a fully-cloned github repository with every branch and tag cloned (recursive branches haven't been tested). Each repo is contained inside a folder labeled on their owner or organization, i.e. "Desperationis" and "jghsrobotics" in this case. It **does not** do a `git clone --mirror`, as repos are simply cloned normally with their branches loaded in using `git checkout`. 
+## Commands
 
-## Usage
-There are 4 executable bash scripts you can use:
+### `./sync` - Backup Everything (Recommended)
 
-* `./clone [github username] [repo]` - Clones a remote repo from a specific user / organization via `git@github.com` into `[github username]` if it does not exist.
-* `./count [username] (-c optional)` - Counts the number of repositories saved locally from a specific user.
-* `./pull [username]` - Does a `git pull --all` on every single locally saved repository from a specific user. If the repo is taken down / unavailable the repo is moved to the root directory in `Outdated`. 
-* `./check [github username]` - The most useful script here; First uses `./clone` and `gh` to clone every single repository that hasn't been saved locally then calls `./pull` to update any existing repos. This should be used almost immediately as `./clone` can only clone repos one at a time. 
+The main command. Archives your personal repos and ALL organizations you're a member of.
 
-Due to how it works, you **must** call `./clone` first on any single project you have then you are free to use anything else (notably `./check`). Optionally, you can simply create a directory in the root directory labeled with your username (see tree output above) then use anything you want. 
+```bash
+./sync
+```
+
+Output:
+```
+========================================
+  gh-archive - Full GitHub Backup
+========================================
+
+Logged in as: yourname
+
+Finding organizations...
+Found 3 organizations
+
+Will archive repositories for:
+  - yourname
+  - org1
+  - org2
+  - org3
+
+[1/4] Syncing: yourname
+...
+```
+
+### `./check [username/org]` - Sync a Single Account
+
+Clone missing repos and update existing ones for a specific user or organization.
+
+```bash
+./check yourname      # Sync your personal repos
+./check some-org      # Sync an organization's repos
+```
+
+### `./clone [username/org] [repo]` - Clone a Single Repo
+
+Clone a specific repository with all branches and tags.
+
+```bash
+./clone yourname my-project
+```
+
+### `./pull [username/org]` - Update All Repos
+
+Update all locally archived repos for a user/org. Offers to move unavailable repos to `Outdated/`.
+
+```bash
+./pull yourname
+```
+
+### `./count [username/org]` - Count Archived Repos
+
+```bash
+./count yourname       # "There are 42 repositories archived for yourname."
+./count yourname -c    # "42" (just the number, for scripting)
+```
+
+## What Gets Archived
+
+For each repository:
+
+- **Full git history** - every commit, not shallow
+- **All branches** - not just main/master
+- **All tags** - releases, versions, etc.
+- **Pull request refs** - archived for reference
+
+## Directory Structure
+
+```
+gh-archive/
+├── sync              # Main backup script
+├── check             # Sync single account
+├── clone             # Clone single repo
+├── pull              # Update repos
+├── count             # Count repos
+├── yourname/         # Your personal repos
+│   ├── repo1/
+│   ├── repo2/
+│   └── repo3/
+├── org-name/         # Organization repos
+│   ├── project-a/
+│   └── project-b/
+└── Outdated/         # Repos that became unavailable
+    └── old-repo/
+```
+
+## Automation (Cron)
+
+Run weekly backups automatically:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (runs every Sunday at 2am)
+0 2 * * 0 cd /path/to/gh-archive && ./sync >> backup.log 2>&1
+```
+
+## Troubleshooting
+
+### "ERROR: Not logged into GitHub CLI"
+
+```bash
+gh auth login
+```
+
+### "ERROR: Failed to clone" or SSH errors
+
+Make sure your SSH key is set up:
+```bash
+ssh -T git@github.com
+# Should say: "Hi username! You've successfully authenticated"
+```
+
+If not, [add your SSH key to GitHub](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account).
+
+### "No repositories found"
+
+- Check that `gh auth status` shows the correct account
+- Verify you have access to the repos with `gh repo list username`
+
+### Repo moved to Outdated/ but it still exists
+
+The repo may have:
+- Been renamed
+- Changed visibility (public → private)
+- Had your access revoked
+
+Check manually and re-clone if needed.
+
+## Why Not `--mirror`?
+
+This tool creates normal working clones (not bare/mirror repos) so you can:
+- Browse the code normally
+- Check out any branch
+- Run the project locally
+- Push to a new remote if needed
+
+## License
+
+MIT

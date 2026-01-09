@@ -1,50 +1,71 @@
 #!/bin/bash
 
-if [[ $# -lt 1 ]]
-then
-	echo "Usage: ./check [github username]"
+# check - Main script to sync all repos for a GitHub user/org
+# Creates directory if needed, clones missing repos, updates existing ones
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# -lt 1 ]]; then
+	echo "Usage: ./check [github username/org]"
 	exit 1
 fi
 
-user=$1
-repos=$(gh repo list --json name $user -L 999 | grep -o -E ":\"([a-zA-Z0-9\._-])+\"" | cut -c3- | sed 's/.$//') # Do weird linux magic to parse JSON
-repocount=$(gh repo list $user -L 999 | wc -l)
-count=$(./count $user -c)
+user="$1"
 
-if [[ $? -ne 0 ]]
-then
-	echo $count
+# Create directory if it doesn't exist (fixes the script order dependency bug)
+if ! [[ -d "$SCRIPT_DIR/$user" ]]; then
+	echo "Creating directory for $user..."
+	mkdir -p "$SCRIPT_DIR/$user"
+fi
+
+# Use jq if available, otherwise fall back to grep (but with better regex)
+if command -v jq &> /dev/null; then
+	repos=$(gh repo list "$user" -L 999 --json name -q '.[].name')
+else
+	# Fallback: handle more characters in repo names (including +, @, etc.)
+	repos=$(gh repo list "$user" -L 999 --json name | grep -oP '"name"\s*:\s*"\K[^"]+')
+fi
+
+if [[ -z "$repos" ]]; then
+	echo "No repositories found for $user (or gh auth issue)."
 	exit 1
 fi
 
-if [[ $repocount -ne $count ]]
-then
-	echo "$user/ only has $count repositories out of $repocount synced."
-	echo "Here are the missing repositories to be synced:"
+repocount=$(echo "$repos" | wc -l)
+count=$("$SCRIPT_DIR/count" "$user" -c 2>/dev/null || echo "0")
+
+echo "Found $repocount repositories on GitHub for $user."
+echo "Currently have $count repositories locally."
+
+if [[ "$repocount" -ne "$count" ]]; then
+	echo ""
+	echo "Missing repositories to sync:"
 
 	missingRepos=()
 
-	for repo in $repos
-	do
-		if ! [[ -d $user/$repo ]]
-		then
-			echo -e "*\t$repo"
-			missingRepos+=( $repo )
+	while IFS= read -r repo; do
+		if ! [[ -d "$SCRIPT_DIR/$user/$repo" ]]; then
+			echo "  * $repo"
+			missingRepos+=("$repo")
 		fi
-	done
+	done <<< "$repos"
 
-	echo ""
-	echo "Cloning them all..."
-	for repo in ${missingRepos[@]}
-	do
-		./clone $user $repo
-	done
-
+	if [[ ${#missingRepos[@]} -gt 0 ]]; then
+		echo ""
+		echo "Cloning ${#missingRepos[@]} missing repositories..."
+		for repo in "${missingRepos[@]}"; do
+			"$SCRIPT_DIR/clone" "$user" "$repo"
+		done
+	fi
 else
-	echo "Everything is fully synced!"
+	echo "All repositories are cloned!"
 fi
 
 echo ""
-echo "Updating everything..."
-./pull $user
+echo "Updating all repositories..."
+"$SCRIPT_DIR/pull" "$user"
 
+echo ""
+echo "Sync complete for $user!"

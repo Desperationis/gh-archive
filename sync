@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# sync - Archive EVERYTHING: your repos + all organizations you belong to
+# This is the main "one command to archive everything" script
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "========================================"
+echo "  gh-archive - Full GitHub Backup"
+echo "========================================"
+echo ""
+
+# Check if gh is installed and authenticated
+if ! command -v gh &> /dev/null; then
+	echo "ERROR: GitHub CLI (gh) is not installed."
+	echo "       Install it from: https://cli.github.com/"
+	exit 1
+fi
+
+if ! gh auth status &> /dev/null; then
+	echo "ERROR: Not logged into GitHub CLI."
+	echo "       Run: gh auth login"
+	exit 1
+fi
+
+# Get the authenticated user
+current_user=$(gh api user --jq '.login')
+
+if [[ -z "$current_user" ]]; then
+	echo "ERROR: Could not determine logged-in user."
+	exit 1
+fi
+
+echo "Logged in as: $current_user"
+echo ""
+
+# Get all organizations the user is a member of
+echo "Finding organizations..."
+if command -v jq &> /dev/null; then
+	orgs=$(gh api user/orgs --paginate --jq '.[].login' 2>/dev/null || echo "")
+else
+	orgs=$(gh api user/orgs --paginate 2>/dev/null | grep -oP '"login"\s*:\s*"\K[^"]+' || echo "")
+fi
+
+org_count=$(echo "$orgs" | grep -c . || echo "0")
+echo "Found $org_count organizations"
+echo ""
+
+# Build list of all accounts to sync
+accounts=("$current_user")
+while IFS= read -r org; do
+	[[ -n "$org" ]] && accounts+=("$org")
+done <<< "$orgs"
+
+echo "Will archive repositories for:"
+for account in "${accounts[@]}"; do
+	echo "  - $account"
+done
+echo ""
+
+# Sync each account
+total_accounts=${#accounts[@]}
+current=0
+
+for account in "${accounts[@]}"; do
+	((current++))
+	echo ""
+	echo "========================================"
+	echo "[$current/$total_accounts] Syncing: $account"
+	echo "========================================"
+	"$SCRIPT_DIR/check" "$account"
+done
+
+echo ""
+echo "========================================"
+echo "  Backup Complete!"
+echo "========================================"
+echo ""
+
+# Summary
+echo "Archived accounts:"
+for account in "${accounts[@]}"; do
+	if [[ -d "$SCRIPT_DIR/$account" ]]; then
+		count=$("$SCRIPT_DIR/count" "$account" -c 2>/dev/null || echo "0")
+		echo "  - $account: $count repos"
+	fi
+done
