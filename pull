@@ -75,13 +75,13 @@ if [[ $failed -gt 0 ]]; then
 	done
 
 	echo ""
-	read -p "Move failed repos to Outdated/? [y/N] " answer
+	read -p "Move failed repos to Archived/$user/? [y/N] " answer
 
 	if [[ "$answer" =~ ^[Yy]$ ]]; then
-		mkdir -p "$SCRIPT_DIR/accounts/Outdated"
+		mkdir -p "$SCRIPT_DIR/accounts/Archived/$user"
 		for repo in "${failed_repos[@]}"; do
-			mv "$user_dir/$repo" "$SCRIPT_DIR/accounts/Outdated/"
-			echo "Moved: $repo -> Outdated/"
+			mv "$user_dir/$repo" "$SCRIPT_DIR/accounts/Archived/$user/"
+			echo "Moved: $repo -> Archived/$user/"
 		done
 	fi
 fi

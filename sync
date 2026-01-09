@@ -263,6 +263,67 @@ echo ""
 echo "Results: $completed succeeded, $failed failed"
 echo ""
 
+# Check for local repos that no longer exist on GitHub (orphaned repos)
+echo "Checking for orphaned local repositories..."
+orphaned_repos=()
+
+for account in "${accounts[@]}"; do
+	account_dir="$SCRIPT_DIR/accounts/$account"
+	[[ -d "$account_dir" ]] || continue
+
+	# Get list of GitHub repos for this account (already fetched above)
+	github_repos=()
+	for repo_path in "${all_repos[@]}"; do
+		if [[ "${repo_path%%/*}" == "$account" ]]; then
+			github_repos+=("${repo_path#*/}")
+		fi
+	done
+
+	# Check each local directory
+	for repo_dir in "$account_dir"/*/; do
+		[[ -d "$repo_dir" ]] || continue
+		[[ -d "$repo_dir/.git" ]] || continue
+
+		repo_name=$(basename "$repo_dir")
+
+		# Check if this repo exists on GitHub
+		found=false
+		for gh_repo in "${github_repos[@]}"; do
+			if [[ "$gh_repo" == "$repo_name" ]]; then
+				found=true
+				break
+			fi
+		done
+
+		if [[ "$found" == "false" ]]; then
+			orphaned_repos+=("$account/$repo_name")
+		fi
+	done
+done
+
+if [[ ${#orphaned_repos[@]} -gt 0 ]]; then
+	echo ""
+	echo "Found ${#orphaned_repos[@]} orphaned repos (exist locally but not on GitHub):"
+	for orphan in "${orphaned_repos[@]}"; do
+		echo "  - $orphan"
+	done
+
+	echo ""
+	echo "Moving orphaned repos to Archived/..."
+	for orphan in "${orphaned_repos[@]}"; do
+		account="${orphan%%/*}"
+		repo="${orphan#*/}"
+		archive_dir="$SCRIPT_DIR/accounts/Archived/$account"
+		mkdir -p "$archive_dir"
+		mv "$SCRIPT_DIR/accounts/$account/$repo" "$archive_dir/"
+		echo "  Archived: $orphan"
+	done
+else
+	echo "No orphaned repositories found."
+fi
+
+echo ""
+
 # Summary
 echo "Archived accounts:"
 for account in "${accounts[@]}"; do
@@ -271,3 +332,12 @@ for account in "${accounts[@]}"; do
 		echo "  - $account: $count repos"
 	fi
 done
+
+# Show archived count if any
+if [[ -d "$SCRIPT_DIR/accounts/Archived" ]]; then
+	archived_count=$(find "$SCRIPT_DIR/accounts/Archived" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l)
+	if [[ $archived_count -gt 0 ]]; then
+		echo ""
+		echo "Archived repositories: $archived_count"
+	fi
+fi

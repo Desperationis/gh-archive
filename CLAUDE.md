@@ -20,7 +20,7 @@ There are 5 executable bash scripts:
 - `./sync` - **Main script**: Automatically archives your personal repos AND all organizations you belong to
 - `./check [username/org]` - Syncs all repos for a specific user/org (clones missing, updates existing)
 - `./clone [username] [repo]` - Clones a single repo with all branches/tags
-- `./pull [username]` - Updates all local repos for a user; offers to move unavailable repos to `Outdated/`
+- `./pull [username]` - Updates all local repos for a user; offers to move unavailable repos to `Archived/`
 - `./count [username] (-c)` - Counts locally saved repos for a user; `-c` flag outputs just the number
 
 ## Architecture
@@ -34,7 +34,9 @@ The scripts organize repos into an `accounts/` subdirectory (which is gitignored
 │   │   └── repo2/
 │   ├── organization1/
 │   │   └── repo3/
-│   └── Outdated/       # repos that became unavailable
+│   └── Archived/       # repos that no longer exist on GitHub
+│       └── username1/  # organized by original account
+│           └── deleted-repo/
 ├── sync
 ├── check
 ├── clone
