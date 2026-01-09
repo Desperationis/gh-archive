@@ -10,7 +10,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 user="$1"
-user_dir="$SCRIPT_DIR/$user"
+user_dir="$SCRIPT_DIR/accounts/$user"
 
 if ! [[ -d "$user_dir" ]]; then
 	echo "ERROR: $user/ does not exist."

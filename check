@@ -15,9 +15,9 @@ fi
 user="$1"
 
 # Create directory if it doesn't exist (fixes the script order dependency bug)
-if ! [[ -d "$SCRIPT_DIR/$user" ]]; then
+if ! [[ -d "$SCRIPT_DIR/accounts/$user" ]]; then
 	echo "Creating directory for $user..."
-	mkdir -p "$SCRIPT_DIR/$user"
+	mkdir -p "$SCRIPT_DIR/accounts/$user"
 fi
 
 # Use jq if available, otherwise fall back to grep (but with better regex)
@@ -46,7 +46,7 @@ if [[ "$repocount" -ne "$count" ]]; then
 	missingRepos=()
 
 	while IFS= read -r repo; do
-		if ! [[ -d "$SCRIPT_DIR/$user/$repo" ]]; then
+		if ! [[ -d "$SCRIPT_DIR/accounts/$user/$repo" ]]; then
 			echo "  * $repo"
 			missingRepos+=("$repo")
 		fi

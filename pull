@@ -10,7 +10,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 user="$1"
-user_dir="$SCRIPT_DIR/$user"
+user_dir="$SCRIPT_DIR/accounts/$user"
 
 if ! [[ -d "$user_dir" ]]; then
 	echo "ERROR: $user/ does not exist."
@@ -78,9 +78,9 @@ if [[ $failed -gt 0 ]]; then
 	read -p "Move failed repos to Outdated/? [y/N] " answer
 
 	if [[ "$answer" =~ ^[Yy]$ ]]; then
-		mkdir -p "$SCRIPT_DIR/Outdated"
+		mkdir -p "$SCRIPT_DIR/accounts/Outdated"
 		for repo in "${failed_repos[@]}"; do
-			mv "$user_dir/$repo" "$SCRIPT_DIR/Outdated/"
+			mv "$user_dir/$repo" "$SCRIPT_DIR/accounts/Outdated/"
 			echo "Moved: $repo -> Outdated/"
 		done
 	fi

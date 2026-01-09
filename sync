@@ -114,7 +114,7 @@ all_repos=()
 
 for account in "${accounts[@]}"; do
 	# Create directory if it doesn't exist
-	mkdir -p "$SCRIPT_DIR/$account"
+	mkdir -p "$SCRIPT_DIR/accounts/$account"
 
 	# Get repos for this account
 	if command -v jq &> /dev/null; then
@@ -150,7 +150,7 @@ sync_repo() {
 	local account_repo="$1"
 	local account="${account_repo%%/*}"
 	local repo="${account_repo#*/}"
-	local repo_dir="$SCRIPT_DIR/$account/$repo"
+	local repo_dir="$SCRIPT_DIR/accounts/$account/$repo"
 	local status="ok"
 
 	# Clone if missing
@@ -266,7 +266,7 @@ echo ""
 # Summary
 echo "Archived accounts:"
 for account in "${accounts[@]}"; do
-	if [[ -d "$SCRIPT_DIR/$account" ]]; then
+	if [[ -d "$SCRIPT_DIR/accounts/$account" ]]; then
 		count=$("$SCRIPT_DIR/count" "$account" -c 2>/dev/null || echo "0")
 		echo "  - $account: $count repos"
 	fi

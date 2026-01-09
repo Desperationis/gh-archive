@@ -15,24 +15,24 @@ user="$1"
 repo="$2"
 
 # Create user directory if it doesn't exist
-if [[ -d "$SCRIPT_DIR/$user/$repo" ]]; then
+if [[ -d "$SCRIPT_DIR/accounts/$user/$repo" ]]; then
 	echo "Already cloned: $user/$repo"
 	exit 0
 fi
 
-mkdir -p "$SCRIPT_DIR/$user"
+mkdir -p "$SCRIPT_DIR/accounts/$user"
 
 echo "Cloning $user/$repo..."
 
 # Clone with full history (default behavior, but explicit)
-if ! git clone "git@github.com:$user/$repo.git" "$SCRIPT_DIR/$user/$repo" 2>&1; then
+if ! git clone "git@github.com:$user/$repo.git" "$SCRIPT_DIR/accounts/$user/$repo" 2>&1; then
 	echo "ERROR: Failed to clone $user/$repo"
 	echo "       (Does the repo exist? Do you have SSH access?)"
-	rm -rf "$SCRIPT_DIR/$user/$repo" 2>/dev/null || true
+	rm -rf "$SCRIPT_DIR/accounts/$user/$repo" 2>/dev/null || true
 	exit 1
 fi
 
-cd "$SCRIPT_DIR/$user/$repo"
+cd "$SCRIPT_DIR/accounts/$user/$repo"
 
 echo "Fetching all branches and tags for $repo..."
 

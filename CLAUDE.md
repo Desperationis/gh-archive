@@ -25,15 +25,21 @@ There are 5 executable bash scripts:
 
 ## Architecture
 
-The scripts organize repos into directories named after their GitHub owner/organization:
+The scripts organize repos into an `accounts/` subdirectory (which is gitignored):
 ```
 .
-├── username1/
-│   ├── repo1/
-│   └── repo2/
-├── organization1/
-│   └── repo3/
-└── Outdated/       # repos that became unavailable
+├── accounts/           # all backups stored here (gitignored)
+│   ├── username1/
+│   │   ├── repo1/
+│   │   └── repo2/
+│   ├── organization1/
+│   │   └── repo3/
+│   └── Outdated/       # repos that became unavailable
+├── sync
+├── check
+├── clone
+├── pull
+└── count
 ```
 
 **Workflow:**
