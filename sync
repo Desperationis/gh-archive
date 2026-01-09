@@ -65,7 +65,7 @@ total_accounts=${#accounts[@]}
 current=0
 
 for account in "${accounts[@]}"; do
-	((current++))
+	((++current))
 	echo ""
 	echo "========================================"
 	echo "[$current/$total_accounts] Syncing: $account"

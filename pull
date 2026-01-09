@@ -36,6 +36,9 @@ for repo_dir in "$user_dir"/*/; do
 	(
 		cd "$repo_dir"
 
+		# Detach HEAD so we can update all branches including the current one
+		git checkout --detach HEAD 2>/dev/null || true
+
 		# Fetch all branches and tags (this gets NEW branches too)
 		if ! git fetch origin '+refs/heads/*:refs/heads/*' --tags --force 2>&1; then
 			exit 1

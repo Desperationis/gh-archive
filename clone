@@ -36,6 +36,9 @@ cd "$SCRIPT_DIR/$user/$repo"
 
 echo "Fetching all branches and tags for $repo..."
 
+# Detach HEAD so we can fetch into all branches (including the current one)
+git checkout --detach HEAD 2>/dev/null || true
+
 # Fetch ALL branches from origin and create local tracking branches
 if ! git fetch origin '+refs/heads/*:refs/heads/*' --tags --force 2>&1; then
 	echo "Warning: Could not fetch all branches from origin"
