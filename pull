@@ -47,6 +47,20 @@ for repo_dir in "$user_dir"/*/; do
 		# Also fetch PR refs for complete archival
 		git fetch origin '+refs/pull/*/head:refs/pull/*/head' 2>/dev/null || true
 
+		# Delete local branches that no longer exist on remote
+		# Get remote branches (strip 'origin/' prefix)
+		remote_branches=$(git ls-remote --heads origin 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||')
+
+		# Get local branches
+		local_branches=$(git for-each-ref --format='%(refname:short)' refs/heads/)
+
+		# Delete local branches not on remote (use -F for fixed string matching)
+		for local_branch in $local_branches; do
+			if ! echo "$remote_branches" | grep -Fqx "$local_branch"; then
+				git branch -D "$local_branch" 2>/dev/null && echo "  Deleted branch: $local_branch (no longer on remote)"
+			fi
+		done
+
 		# Pull current branch if it has an upstream
 		git pull --ff-only 2>/dev/null || true
 	)
